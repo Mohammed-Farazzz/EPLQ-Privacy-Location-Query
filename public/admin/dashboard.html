@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - EPLQ</title>
+    <link rel="stylesheet" href="../css/main.css">
+    <link rel="stylesheet" href="../css/admin.css">
+</head>
+
+<body>
+    <div class="admin-dashboard">
+        <!-- Header -->
+        <div class="admin-header">
+            <div>
+                <h1 class="admin-title">Admin Dashboard</h1>
+                <p style="color: var(--text-muted); margin: 0;">Welcome, <span id="adminEmail">admin@example.com</span>
+                </p>
+            </div>
+            <div class="admin-actions">
+                <button class="btn btn-outline" id="refreshBtn">🔄 Refresh</button>
+                <button class="btn btn-secondary" id="logoutBtn">Logout</button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalPOIs">0</div>
+                <div class="stat-label">Total POIs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="todayUploads">0</div>
+                <div class="stat-label">Today's Uploads</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalUsers">-</div>
+                <div class="stat-label">System Users</div>
+            </div>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alertContainer"></div>
+
+        <!-- Upload Section -->
+        <div class="card upload-section">
+            <h2>Upload POI Data</h2>
+
+            <div class="upload-tabs">
+                <button class="upload-tab active" data-tab="manual">Manual Entry</button>
+                <button class="upload-tab" data-tab="csv">CSV Upload</button>
+            </div>
+
+            <!-- Manual Entry -->
+            <div class="upload-content active" id="manual-tab">
+                <form id="manualUploadForm" class="manual-entry-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="poiName">POI Name *</label>
+                            <input type="text" id="poiName" class="form-input" required
+                                placeholder="e.g., Central Park">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="poiDescription">Description</label>
+                            <input type="text" id="poiDescription" class="form-input" placeholder="Brief description">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="poiLatitude">Latitude *</label>
+                            <input type="number" id="poiLatitude" class="form-input" required step="any"
+                                placeholder="e.g., 40.785091">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="poiLongitude">Longitude *</label>
+                            <input type="number" id="poiLongitude" class="form-input" required step="any"
+                                placeholder="e.g., -73.968285">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="uploadBtn">
+                        🔒 Encrypt & Upload POI
+                    </button>
+                </form>
+            </div>
+
+            <!-- CSV Upload -->
+            <div class="upload-content" id="csv-tab">
+                <div class="file-upload-area" id="fileUploadArea">
+                    <div class="file-upload-icon">📄</div>
+                    <div class="file-upload-text">Click to upload or drag and drop</div>
+                    <div class="file-upload-hint">CSV file with columns: Name, Latitude, Longitude, Description</div>
+                    <input type="file" id="csvFileInput" accept=".csv">
+                </div>
+                <div id="csvPreview" style="margin-top: 1rem; display: none;">
+                    <h4>File Preview:</h4>
+                    <pre id="csvContent"
+                        style="background: rgba(15, 23, 42, 0.5); padding: 1rem; border-radius: var(--radius-md); overflow-x: auto; max-height: 200px;"></pre>
+                    <button class="btn btn-primary mt-2" id="uploadCSVBtn">🔒 Encrypt & Upload All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- POI List -->
+        <div class="card poi-list">
+            <h2>Uploaded POIs</h2>
+            <div id="poiTableContainer">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <!-- CryptoJS for encryption -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
+    <!-- App Scripts -->
+    <script src="../js/config.js"></script>
+    <script src="../js/logger.js"></script>
+    <script src="../js/encryption.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/admin.js"></script>
+
+    <script>
+        const alertContainer = document.getElementById('alertContainer');
+        const adminEmail = document.getElementById('adminEmail');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const manualUploadForm = document.getElementById('manualUploadForm');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        const csvFileInput = document.getElementById('csvFileInput');
+        const csvPreview = document.getElementById('csvPreview');
+        const csvContent = document.getElementById('csvContent');
+        const uploadCSVBtn = document.getElementById('uploadCSVBtn');
+        const poiTableContainer = document.getElementById('poiTableContainer');
+
+        let csvData = null;
+
+        function showAlert(message, type = 'error') {
+            alertContainer.innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTimeout(() => {
+                alertContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // Check authentication
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const role = await authService.getUserRole();
+            if (role !== 'admin') {
+                await authService.logout();
+                window.location.href = 'login.html';
+                return;
+            }
+
+            adminEmail.textContent = user.email;
+            loadPOIs();
+        });
+
+        // Logout
+        logoutBtn.addEventListener('click', async () => {
+            await authService.logout();
+            window.location.href = 'login.html';
+        });
+
+        // Refresh
+        refreshBtn.addEventListener('click', () => {
+            loadPOIs();
+            showAlert('Data refreshed!', 'success');
+        });
+
+        // Tab switching
+        document.querySelectorAll('.upload-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+
+                document.querySelectorAll('.upload-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.upload-content').forEach(c => c.classList.remove('active'));
+
+                tab.classList.add('active');
+                document.getElementById(`${tabName}-tab`).classList.add('active');
+            });
+        });
+
+        // Manual upload
+        manualUploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const poi = {
+                name: document.getElementById('poiName').value,
+                latitude: document.getElementById('poiLatitude').value,
+                longitude: document.getElementById('poiLongitude').value,
+                description: document.getElementById('poiDescription').value
+            };
+
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '🔒 Encrypting...';
+
+            const result = await adminService.uploadPOI(poi);
+
+            if (result.success) {
+                showAlert('POI uploaded successfully!', 'success');
+                manualUploadForm.reset();
+                loadPOIs();
+            } else {
+                showAlert(result.message);
+            }
+
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = '🔒 Encrypt & Upload POI';
+        });
+
+        // CSV upload
+        fileUploadArea.addEventListener('click', () => {
+            csvFileInput.click();
+        });
+
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('drag-over');
+        });
+
+        fileUploadArea.addEventListener('dragleave', () => {
+            fileUploadArea.classList.remove('drag-over');
+        });
+
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                handleCSVFile(file);
+            } else {
+                showAlert('Please upload a CSV file');
+            }
+        });
+
+        csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleCSVFile(file);
+            }
+        });
+
+        function handleCSVFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                csvData = e.target.result;
+                csvContent.textContent = csvData;
+                csvPreview.style.display = 'block';
+            };
+            reader.readAsText(file);
+        }
+
+        uploadCSVBtn.addEventListener('click', async () => {
+            if (!csvData) return;
+
+            uploadCSVBtn.disabled = true;
+            uploadCSVBtn.textContent = '🔒 Encrypting & Uploading...';
+
+            const result = await adminService.uploadPOIsFromCSV(csvData);
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+                csvData = null;
+                csvPreview.style.display = 'none';
+                csvFileInput.value = '';
+                loadPOIs();
+            } else {
+                showAlert(result.message);
+            }
+
+            uploadCSVBtn.disabled = false;
+            uploadCSVBtn.textContent = '🔒 Encrypt & Upload All';
+        });
+
+        // Load POIs
+        async function loadPOIs() {
+            poiTableContainer.innerHTML = '<div class="spinner"></div>';
+
+            const result = await adminService.getAllPOIs();
+
+            if (result.success && result.pois.length > 0) {
+                document.getElementById('totalPOIs').textContent = result.pois.length;
+
+                let tableHTML = `
+                    <table class="poi-table">
+                        <thead>
+                            <tr>
+                                <th>Encrypted Data</th>
+                                <th>Uploaded At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                result.pois.forEach(poi => {
+                    const uploadedAt = poi.uploadedAt ? new Date(poi.uploadedAt.toDate()).toLocaleString() : 'N/A';
+                    const encryptedPreview = poi.encryptedData.substring(0, 50) + '...';
+
+                    tableHTML += `
+                        <tr>
+                            <td style="font-family: monospace; font-size: 0.875rem;">${encryptedPreview}</td>
+                            <td>${uploadedAt}</td>
+                            <td>
+                                <div class="poi-actions">
+                                    <button class="poi-action-btn decrypt" onclick="decryptPOI('${poi.id}', '${poi.encryptedData}')">🔓 Decrypt</button>
+                                    <button class="poi-action-btn delete" onclick="deletePOI('${poi.id}')">🗑️ Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tableHTML += '</tbody></table>';
+                poiTableContainer.innerHTML = tableHTML;
+            } else {
+                poiTableContainer.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📍</div>
+                        <div class="empty-state-text">No POIs uploaded yet</div>
+                        <div class="empty-state-hint">Upload your first POI using the form above</div>
+                    </div>
+                `;
+                document.getElementById('totalPOIs').textContent = '0';
+            }
+        }
+
+        // Decrypt POI
+        window.decryptPOI = function (id, encryptedData) {
+            try {
+                const decrypted = encryptionService.decryptPOI(encryptedData);
+                const message = `
+                    <strong>Decrypted POI:</strong><br>
+                    Name: ${decrypted.name}<br>
+                    Latitude: ${decrypted.latitude}<br>
+                    Longitude: ${decrypted.longitude}<br>
+                    Description: ${decrypted.description || 'N/A'}
+                `;
+                showAlert(message, 'info');
+            } catch (error) {
+                showAlert('Failed to decrypt: ' + error.message);
+            }
+        };
+
+        // Delete POI
+        window.deletePOI = async function (id) {
+            if (!confirm('Are you sure you want to delete this POI?')) return;
+
+            const result = await adminService.deletePOI(id);
+
+            if (result.success) {
+                showAlert('POI deleted successfully!', 'success');
+                loadPOIs();
+            } else {
+                showAlert(result.message);
+            }
+        };
+    </script>
+</body>
+
+</html>

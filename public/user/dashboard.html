@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard - EPLQ</title>
+    <link rel="stylesheet" href="../css/main.css">
+    <link rel="stylesheet" href="../css/user.css">
+</head>
+
+<body>
+    <div class="user-dashboard">
+        <!-- Header -->
+        <div class="user-header">
+            <div>
+                <h1 class="user-title">Search POIs</h1>
+                <p style="color: var(--text-muted); margin: 0;">Welcome, <span id="userEmail">user@example.com</span>
+                </p>
+            </div>
+            <div class="user-actions">
+                <button class="btn btn-outline" id="clearBtn">Clear Results</button>
+                <button class="btn btn-secondary" id="logoutBtn">Logout</button>
+            </div>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alertContainer"></div>
+
+        <!-- Search Section -->
+        <div class="search-section">
+            <div class="search-card">
+                <h2>🔍 Search Encrypted POI Data</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                    Enter location coordinates and search radius to find nearby Points of Interest
+                </p>
+
+                <form id="searchForm" class="search-form">
+                    <div class="search-row">
+                        <div class="form-group">
+                            <label class="form-label" for="searchLat">Latitude</label>
+                            <input type="number" id="searchLat" class="form-input" required step="any"
+                                placeholder="e.g., 40.785091">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="searchLng">Longitude</label>
+                            <input type="number" id="searchLng" class="form-input" required step="any"
+                                placeholder="e.g., -73.968285">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="searchRadius">Radius (km)</label>
+                            <input type="number" id="searchRadius" class="form-input" required step="any" min="0.1"
+                                placeholder="e.g., 5">
+                        </div>
+                    </div>
+
+                    <div class="search-actions">
+                        <button type="submit" class="btn btn-primary" id="searchBtn">
+                            🔓 Decrypt & Search
+                        </button>
+                        <button type="button" class="btn btn-accent" id="useLocationBtn">
+                            📍 Use My Location
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <div class="results-header">
+                <div class="results-count">
+                    Found <strong id="resultsCount">0</strong> POI(s)
+                </div>
+                <div class="results-filter">
+                    <span class="filter-label">Sort by:</span>
+                    <select class="filter-select" id="sortSelect">
+                        <option value="distance">Distance (Nearest)</option>
+                        <option value="name">Name (A-Z)</option>
+                        <option value="recent">Recently Added</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="resultsContainer">
+                <!-- Results will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="spinner"></div>
+        <div class="loading-text">Decrypting and searching encrypted data...</div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <!-- CryptoJS for decryption -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
+    <!-- App Scripts -->
+    <script src="../js/config.js"></script>
+    <script src="../js/logger.js"></script>
+    <script src="../js/encryption.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/user.js"></script>
+
+    <script>
+        const alertContainer = document.getElementById('alertContainer');
+        const userEmail = document.getElementById('userEmail');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const searchForm = document.getElementById('searchForm');
+        const searchBtn = document.getElementById('searchBtn');
+        const useLocationBtn = document.getElementById('useLocationBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const resultsCount = document.getElementById('resultsCount');
+        const sortSelect = document.getElementById('sortSelect');
+
+        let currentResults = [];
+
+        function showAlert(message, type = 'error') {
+            alertContainer.innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTimeout(() => {
+                alertContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        function showLoading(show = true) {
+            loadingOverlay.style.display = show ? 'flex' : 'none';
+        }
+
+        // Check authentication
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            userEmail.textContent = user.email;
+        });
+
+        // Logout
+        logoutBtn.addEventListener('click', async () => {
+            await authService.logout();
+            window.location.href = 'login.html';
+        });
+
+        // Clear results
+        clearBtn.addEventListener('click', () => {
+            resultsSection.style.display = 'none';
+            currentResults = [];
+            searchForm.reset();
+        });
+
+        // Use current location
+        useLocationBtn.addEventListener('click', async () => {
+            useLocationBtn.disabled = true;
+            useLocationBtn.textContent = '📍 Getting location...';
+
+            try {
+                const location = await userService.getCurrentLocation();
+                document.getElementById('searchLat').value = location.latitude.toFixed(6);
+                document.getElementById('searchLng').value = location.longitude.toFixed(6);
+                showAlert('Location acquired successfully!', 'success');
+            } catch (error) {
+                showAlert(error.message);
+            }
+
+            useLocationBtn.disabled = false;
+            useLocationBtn.textContent = '📍 Use My Location';
+        });
+
+        // Search POIs
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const latitude = parseFloat(document.getElementById('searchLat').value);
+            const longitude = parseFloat(document.getElementById('searchLng').value);
+            const radius = parseFloat(document.getElementById('searchRadius').value);
+
+            searchBtn.disabled = true;
+            searchBtn.textContent = '🔓 Decrypting...';
+            showLoading(true);
+
+            try {
+                const result = await userService.searchPOIs(latitude, longitude, radius);
+
+                if (result.success) {
+                    currentResults = result.results;
+                    displayResults(currentResults);
+                    showAlert(result.message, 'success');
+                } else {
+                    showAlert(result.message);
+                }
+            } catch (error) {
+                showAlert('Search failed: ' + error.message);
+            }
+
+            searchBtn.disabled = false;
+            searchBtn.textContent = '🔓 Decrypt & Search';
+            showLoading(false);
+        });
+
+        // Sort results
+        sortSelect.addEventListener('change', () => {
+            const sortBy = sortSelect.value;
+            let sorted = [...currentResults];
+
+            if (sortBy === 'distance') {
+                sorted.sort((a, b) => a.distance - b.distance);
+            } else if (sortBy === 'name') {
+                sorted.sort((a, b) => a.name.localeCompare(b.name));
+            } else if (sortBy === 'recent') {
+                sorted.sort((a, b) => {
+                    const dateA = a.uploadedAt ? new Date(a.uploadedAt.toDate()) : new Date(0);
+                    const dateB = b.uploadedAt ? new Date(b.uploadedAt.toDate()) : new Date(0);
+                    return dateB - dateA;
+                });
+            }
+
+            displayResults(sorted);
+        });
+
+        // Display results
+        function displayResults(results) {
+            resultsSection.style.display = 'block';
+            resultsCount.textContent = results.length;
+
+            if (results.length === 0) {
+                resultsContainer.innerHTML = `
+                    <div class="empty-results">
+                        <div class="empty-results-icon">🔍</div>
+                        <div class="empty-results-title">No POIs Found</div>
+                        <div class="empty-results-text">Try adjusting your search location or increasing the radius</div>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<div class="poi-grid">';
+
+            results.forEach(poi => {
+                const uploadedAt = poi.uploadedAt ? new Date(poi.uploadedAt.toDate()).toLocaleDateString() : 'N/A';
+                const distance = userService.formatDistance(poi.distance);
+
+                html += `
+                    <div class="poi-card">
+                        <div class="poi-card-header">
+                            <h3 class="poi-name">${escapeHtml(poi.name)}</h3>
+                            <span class="poi-distance">${distance}</span>
+                        </div>
+                        
+                        <p class="poi-description">${escapeHtml(poi.description || 'No description available')}</p>
+                        
+                        <div class="poi-coordinates">
+                            <div class="poi-coord">
+                                <span class="poi-coord-label">Latitude</span>
+                                <span class="poi-coord-value">${poi.latitude.toFixed(6)}</span>
+                            </div>
+                            <div class="poi-coord">
+                                <span class="poi-coord-label">Longitude</span>
+                                <span class="poi-coord-value">${poi.longitude.toFixed(6)}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="poi-footer">
+                            <span class="poi-uploaded">Added: ${uploadedAt}</span>
+                            <button class="poi-view-btn" onclick="viewOnMap(${poi.latitude}, ${poi.longitude}, '${escapeHtml(poi.name)}')">
+                                📍 View on Map
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+        }
+
+        // View on map (opens Google Maps)
+        window.viewOnMap = function (lat, lng, name) {
+            const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+            window.open(url, '_blank');
+            logger.info('Viewed POI on map', { name, lat, lng });
+        };
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+
+</html>
