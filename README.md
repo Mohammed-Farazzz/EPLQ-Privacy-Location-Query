@@ -1,6 +1,6 @@
 # EPLQ: Efficient Privacy-Preserving Location-Based Query System
 
-🔗 **Live Demo**: https://eplq-project-c1ac8.web.app *(Update after deployment)*
+🔗 **Live Demo**: https://eplq-project-c1ac8.web.app/
 
 [![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
@@ -454,7 +454,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 👥 Authors
 
-- **Your Name** - *Initial work* - [YourGitHub](https://github.com/yourusername)
+- **Your Name** - *Initial work* - [YourGitHub](https://github.com/Mohammed-Farazzz)
 
 ## 🙏 Acknowledgments
 
@@ -465,7 +465,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📞 Support
 
-For support, email your-email@example.com or open an issue in the GitHub repository.
+For support, email mohammedfaraz156@gmail.com or open an issue in the GitHub repository.
 
 ## 🔮 Future Enhancements
 
